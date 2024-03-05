@@ -1,0 +1,67 @@
+Question 1:	Yorkville East, Steinway
+
+CREATE MATERIALIZED VIEW trip_time_new AS
+SELECT
+    pulocationid AS start_zone_id,
+    dolocationid AS end_zone_id,
+    AVG(trip_distance) AS avg_trip_time, 
+    MIN(trip_distance) AS min_trip_time,
+    MAX(trip_distance) AS max_trip_time
+FROM  trip_data
+GROUP BY
+    pulocationid,
+    dolocationid;
+
+## Finding pair of zones with the HIGHEST AVG Trip time 
+SELECT
+    tzp.zone AS start_zone_name,
+    tzd.zone AS end_zone_name,
+    tt.avg_trip_time_minutes
+FROM
+    (SELECT    pulocationid,     dolocationid,
+         AVG(EXTRACT(EPOCH FROM (tpep_dropoff_datetime - tpep_pickup_datetime)) / 60) AS avg_trip_time_minutes
+     FROM  trip_data
+     GROUP BY pulocationid, dolocationid
+     ORDER BY avg_trip_time_minutes DESC
+     LIMIT 1) tt
+JOIN taxi_zone tzp ON tt.pulocationid = tzp.location_id
+JOIN taxi_zone tzd ON tt.dolocationid = tzd.location_id;
+
+#####################################################################
+
+Question 2: Number of trips - 3 
+CREATE MATERIALIZED VIEW trip_time_and_count AS
+SELECT
+    pulocationid AS start_zone_id,    dolocationid AS end_zone_id,
+    COUNT(*) AS number_of_trips,
+    AVG(trip_distance) AS avg_trip_time, 
+    MIN(trip_distance) AS min_trip_time,
+    MAX(trip_distance) AS max_trip_time
+FROM   trip_data
+GROUP BY  pulocationid, dolocationid;
+
+
+#########################################################################################
+
+Question 3: LaGuardia Airport, Lincoln Square East, JFK Airport 
+WITH latest_time AS (
+  SELECT MAX(tpep_pickup_datetime) AS latest_pickup_time
+  FROM trip_data
+),
+time_window AS (
+  SELECT  pulocationid,
+    COUNT(*) AS num_pickups
+  FROM  trip_data, latest_time
+  WHERE
+    tpep_pickup_datetime BETWEEN (latest_time.latest_pickup_time - INTERVAL '17 HOURS') AND latest_time.latest_pickup_time
+  GROUP BY   pulocationid ),
+ranked_zones AS (
+  SELECT  tz.zone,   tw.num_pickups,  RANK() OVER (ORDER BY tw.num_pickups DESC) AS rank
+  FROM   time_window tw
+  JOIN taxi_zone tz ON tw.pulocationid = tz.location_id
+)
+SELECT  zone,  num_pickups
+FROM ranked_zones
+WHERE  rank <= 3;
+
+
