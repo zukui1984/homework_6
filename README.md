@@ -1,4 +1,4 @@
 # homework_6
 
-1. Radpanda
+1. Redpanda
 2. RisingWave
