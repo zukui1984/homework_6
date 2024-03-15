@@ -1,1 +1,117 @@
+## Question 1. Redpanda version. v22.3.5 (rev 28b2443)
+docker exec -it redpanda-1 bash
+rpk version
+
+## Question 2. Redpandata status. OK
+docker exec -it redpanda-1 bash
+rpk topic create test-topic
+
+## Question 3. Answer = True
+import json
+import time 
+
+from kafka import KafkaProducer
+
+def json_serializer(data):
+    return json.dumps(data).encode('utf-8')
+
+server = 'localhost:9092'
+
+producer = KafkaProducer(
+    bootstrap_servers=[server],
+    value_serializer=json_serializer
+)
+
+producer.bootstrap_connected()
+
+## Question 4. Answer is "Sending message"
+t0 = time.time()
+
+topic_name = 'test-topic'
+
+for i in range(10):
+    message = {'number': i}
+    producer.send(topic_name, value=message)
+    print(f"Sent: {message}")
+    time.sleep(0.05)
+
+producer.flush()
+
+t1 = time.time()
+print(f'took {(t1 - t0):.2f} seconds')
+
+## Question 5
+import pandas as pd
+from kafka import KafkaProducer
+import json
+import time
+
+df_green = pd.read_csv('green_tripdata.csv', usecols=[
+    'lpep_pickup_datetime', 'lpep_dropoff_datetime', 'PULocationID',
+    'DOLocationID', 'passenger_count', 'trip_distance', 'tip_amount'
+])
+
+# Initialize Kafka producer
+producer = KafkaProducer(bootstrap_servers='localhost:9092',
+                         value_serializer=lambda x: json.dumps(x).encode('utf-8'))
+
+# Start timing
+start_time = time.time()
+
+# Send each row of the dataframe to the Kafka topic
+for row in df_green.itertuples(index=False):
+    row_dict = {col: getattr(row, col) for col in row._fields}
+    producer.send('green-trips', value=row_dict)
+
+producer.flush()
+producer.close()
+
+# End timing
+end_time = time.time()
+
+# Calculate 
+duration = end_time - start_time
+print(f"Sending data took {round(duration)} seconds.")
+
+
+## Question 6
+green_stream = spark \
+    .readStream \
+    .format("kafka") \
+    .option("kafka.bootstrap.servers", "localhost:9092") \
+    .option("subscribe", "green-trips") \
+    .option("startingOffsets", "earliest") \
+    .load()
+
+def peek(mini_batch, batch_id):
+    first_row = mini_batch.take(1)
+
+    if first_row:
+        print(first_row[0])
+
+query = green_stream.writeStream.foreachBatch(peek).start()
+
+## Question 7
+from pyspark.sql.functions import current_timestamp, window, col
+
+# Add a timestamp column to the parsed stream
+parsed_stream_with_timestamp = parsed_stream.withColumn("timestamp", current_timestamp())
+
+# Group by window and DOLocationID, then count and order by count
+popular_destinations = parsed_stream_with_timestamp.groupBy(
+    window(col("timestamp"), "5 minutes"),
+    col("DOLocationID")
+).count().orderBy(col("count").desc())
+
+# Output the most popular destinations to the console
+query = popular_destinations \
+    .writeStream \
+    .outputMode("complete") \
+    .format("console") \
+    .option("truncate", "false") \
+    .start()
+
+query.awaitTermination()
+
+
 
